@@ -104,3 +104,12 @@ test "decode" {
         try std.testing.expectError(DecodeError.Insufficient, decode(u64, buf[0..]));
     }
 }
+
+test "identity" {
+    {
+        for (0..std.math.maxInt(u8)) |n_| {
+            const n: u8 = @intCast(n_);
+            try std.testing.expectEqual(n, try decode(u8, &encode(u8, n)));
+        }
+    }
+}
