@@ -15,6 +15,9 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const opts = .{ .target = target, .optimize = optimize };
+    const zbench_module = b.dependency("zbench", opts).module("zbench");
+
     const lib = b.addStaticLibrary(.{
         .name = "muvarint",
         // In this case the main source file is merely a path, however, in more
@@ -23,6 +26,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    lib.root_module.addImport("zbench", zbench_module);
 
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
@@ -35,6 +39,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addImport("zbench", zbench_module);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -88,4 +93,22 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    const bench_step = b.step("bench", "Run benchmarks");
+    const bench = b.addExecutable(.{
+        .name = "bench",
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/benchmark.zig" } },
+        .target = target,
+        .optimize = optimize,
+    });
+    const install_bench = b.addInstallArtifact(bench, .{});
+    bench.root_module.addImport("zbench", zbench_module);
+    bench_step.dependOn(&bench.step);
+    bench_step.dependOn(&install_bench.step);
+
+    const muvarint_mod = b.addModule("muvarint_mod", .{
+        .root_source_file = b.path("src/root.zig"),
+    });
+
+    muvarint_mod.addImport("zbench", zbench_module);
 }
