@@ -112,4 +112,28 @@ test "identity" {
             try std.testing.expectEqual(n, try decode(u8, &encode(u8, n)));
         }
     }
+    {
+        for (0..std.math.maxInt(u16)) |n_| {
+            const n: u16 = @intCast(n_);
+            try std.testing.expectEqual(n, try decode(u16, &encode(u16, n)));
+        }
+    }
+    {
+        for (0..1000_000) |n_| {
+            const n: u32 = @intCast(n_);
+            try std.testing.expectEqual(n, try decode(u32, &encode(u32, n)));
+        }
+    }
+    {
+        for (0..1000_000) |n_| {
+            const n: u64 = @intCast(n_);
+            try std.testing.expectEqual(n, try decode(u64, &encode(u64, n)));
+        }
+    }
+    {
+        for (0..1000_000) |n_| {
+            const n: u128 = @intCast(n_);
+            try std.testing.expectEqual(n, try decode(u128, &encode(u128, n)));
+        }
+    }
 }
