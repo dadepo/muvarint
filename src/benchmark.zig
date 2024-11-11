@@ -1,6 +1,6 @@
 const std = @import("std");
 const zbench = @import("zbench");
-const encode = @import("root.zig").encode;
+const encode = @import("lib.zig").encode;
 
 fn encodeBenchmark(_: std.mem.Allocator) void {
     _ = encode(u64, std.math.maxInt(u64));
