@@ -1,6 +1,6 @@
 const std = @import("std");
 
-fn encoded_len(comptime T: type) u8 {
+fn encodedlen(comptime T: type) u8 {
     switch (@typeInfo(T)) {
         .Int => {},
         else => @compileError("Expected unsigned integer type"),
@@ -16,8 +16,8 @@ fn encoded_len(comptime T: type) u8 {
     };
 }
 
-pub fn encode(comptime T: type, number: T) [encoded_len(T)]u8 {
-    var out: [encoded_len(T)]u8 = [_]u8{0} ** encoded_len(T);
+pub fn encode(comptime T: type, number: T) [encodedlen(T)]u8 {
+    var out: [encodedlen(T)]u8 = [_]u8{0} ** encodedlen(T);
     var n = number;
     for (&out) |*b| {
         const b_: u8 = @truncate(n);
@@ -44,7 +44,7 @@ pub fn decode(comptime T: type, buf: []const u8) DecodeError!T {
             }
             return n;
         }
-        if (i == (encoded_len(T) - 1)) {
+        if (i == (encodedlen(T) - 1)) {
             return error.Overflow;
         }
     }
