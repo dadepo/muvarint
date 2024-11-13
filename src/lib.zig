@@ -1,6 +1,6 @@
 const std = @import("std");
 
-fn encodedlen(comptime T: type) u8 {
+fn encodedTypelen(comptime T: type) u8 {
     switch (@typeInfo(T)) {
         .Int => {},
         else => @compileError("Expected unsigned integer type"),
@@ -16,8 +16,31 @@ fn encodedlen(comptime T: type) u8 {
     };
 }
 
-pub fn encode(comptime T: type, number: T) [encodedlen(T)]u8 {
-    var out: [encodedlen(T)]u8 = [_]u8{0} ** encodedlen(T);
+fn varintSize(comptime value: anytype) u32 {
+    var count: u32 = 0;
+    var v = value;
+
+    while (v != 0) : (v >>= 7) {
+        count += 1;
+    }
+
+    return if (count == 0) 1 else count;
+}
+
+fn encodedLen(comptime number: anytype) u8 {
+    const value_type = @typeInfo(@TypeOf(number));
+    switch (value_type) {
+        .Int, .ComptimeInt => {},
+        else => @compileError("Expected unsigned integer type"),
+    }
+
+    if (value_type == .ComptimeInt) {
+        return varintSize(number);
+    }
+}
+
+pub fn encodeForType(comptime T: type, number: T) [encodedTypelen(T)]u8 {
+    var out: [encodedTypelen(T)]u8 = [_]u8{0} ** encodedTypelen(T);
     var n = number;
     for (&out) |*b| {
         const b_: u8 = @truncate(n);
@@ -31,7 +54,22 @@ pub fn encode(comptime T: type, number: T) [encodedlen(T)]u8 {
     return out;
 }
 
-pub fn encodeHex(comptime T: type, rawHexString: []const u8) ![encodedlen(T)]u8 {
+pub fn encode(number: anytype) [encodedLen(number)]u8 {
+    var out: [encodedLen(number)]u8 = [_]u8{0} ** encodedLen(number);
+    var n: usize = number;
+    for (&out) |*b| {
+        const b_: u8 = @truncate(n);
+        b.* = b_ | 0x80;
+        n >>= 7;
+        if (n == 0) {
+            b.* &= 0x7f;
+            break;
+        }
+    }
+    return out;
+}
+
+pub fn encodeHex(comptime T: type, rawHexString: []const u8) ![encodedTypelen(T)]u8 {
     // Check if the string starts with "0x" and remove it if present
     const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
         rawHexString[2..]
@@ -40,11 +78,18 @@ pub fn encodeHex(comptime T: type, rawHexString: []const u8) ![encodedlen(T)]u8 
 
     const number = try std.fmt.parseInt(T, parsedHexString, 16);
 
-    return encode(T, number);
+    return encodeForType(T, number);
+}
+
+pub fn DecodeResult(comptime T: type) type {
+    return struct {
+        decoded: T,
+        rest: []const u8
+    };
 }
 
 pub const DecodeError = error{ NotMinimal, Overflow, Insufficient };
-pub fn decode(comptime T: type, buf: []const u8) DecodeError!T {
+pub fn decode(comptime T: type, buf: []const u8) DecodeError!DecodeResult(T) {
     var n: T = 0;
     for (buf, 0..) |b, i| {
         const k: u8 = @intCast(b & 0x7F);
@@ -54,23 +99,35 @@ pub fn decode(comptime T: type, buf: []const u8) DecodeError!T {
             if (b == 0 and i > 0) {
                 return error.NotMinimal;
             }
-            return n;
+            return .{.decoded = n, .rest = buf[i+1..]};
         }
-        if (i == (encodedlen(T) - 1)) {
+        if (i == (encodedTypelen(T) - 1)) {
             return error.Overflow;
         }
     }
     return error.Insufficient;
 }
 
+test "encodeForType" {
+    try std.testing.expectEqual(encodeForType(u8, 1), [2]u8{ 1, 0 });
+    try std.testing.expectEqual(encodeForType(u16, 127), [3]u8{ 127, 0, 0 });
+    try std.testing.expectEqual(encodeForType(u16, 128), [3]u8{ 128, 1, 0 });
+    try std.testing.expectEqual(encodeForType(u16, 255), [3]u8{ 255, 1, 0 });
+    try std.testing.expectEqual(encodeForType(u16, 300), [3]u8{ 172, 2, 0 });
+    try std.testing.expectEqual(encodeForType(u16, 16384), [3]u8{ 128, 128, 1 });
+    try std.testing.expectEqual(encodeForType(u64, std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+}
+
 test "encode" {
-    try std.testing.expectEqual(encode(u8, 1), [2]u8{ 1, 0 });
-    try std.testing.expectEqual(encode(u16, 127), [3]u8{ 127, 0, 0 });
-    try std.testing.expectEqual(encode(u16, 128), [3]u8{ 128, 1, 0 });
-    try std.testing.expectEqual(encode(u16, 255), [3]u8{ 255, 1, 0 });
-    try std.testing.expectEqual(encode(u16, 300), [3]u8{ 172, 2, 0 });
-    try std.testing.expectEqual(encode(u16, 16384), [3]u8{ 128, 128, 1 });
-    try std.testing.expectEqual(encode(u64, std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+    const value = 1;
+    try std.testing.expectEqual(encode(value), [1]u8{ 1 });
+    try std.testing.expectEqual(encode(127), [1]u8{ 127 });
+    try std.testing.expectEqual(encode(128), [2]u8{ 128, 1 });
+    try std.testing.expectEqual(encode(255), [2]u8{ 255, 1 });
+    try std.testing.expectEqual(encode(300), [2]u8{ 172, 2 });
+    try std.testing.expectEqual(encode(3840), [2]u8{ 128, 30 });
+    try std.testing.expectEqual(encode(16384), [3]u8{ 128, 128, 1 });
+    try std.testing.expectEqual(encode(std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
 test "encodeHex" {
@@ -93,35 +150,58 @@ test "encodeHex" {
 test "decode" {
     {
         const buf = ([1]u8{1});
-        try std.testing.expectEqual(try decode(u8, buf[0..]), 1);
+        const decoded = (try decode(u8, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 1);
+        try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
         const buf = ([1]u8{0b0111_1111});
-        try std.testing.expectEqual(try decode(u8, buf[0..]), 127);
+        const decoded = (try decode(u8, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 127);
+        try std.testing.expectEqual(decoded.rest.len, 0);
+    }
+    {
+        const buf = ([2]u8{ 0b1000_0000, 1});
+        const decoded = (try decode(u8, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 128);
+        try std.testing.expectEqual(decoded.rest.len, 0);
+    }
+    {
+        // encode with remaining data.
+        const buf = ([3]u8{ 0b1000_0000, 1, 0b1000_0000});
+        const decoded = (try decode(u8, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 128);
+        try std.testing.expectEqual(decoded.rest[0], 0b1000_0000);
     }
     {
         const buf = ([2]u8{ 0b1000_0000, 1 });
-        try std.testing.expectEqual(try decode(u8, buf[0..]), 128);
-    }
-    {
-        const buf = ([2]u8{ 0b1000_0000, 1 });
-        try std.testing.expectEqual(try decode(u8, buf[0..]), 128);
+        const decoded = (try decode(u8, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 128);
+        try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
         const buf = ([2]u8{ 0b1111_1111, 1 });
-        try std.testing.expectEqual(try decode(u8, buf[0..]), 255);
+        const decoded = (try decode(u8, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 255);
+        try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
         const buf = ([3]u8{ 0x80, 0x80, 1 });
-        try std.testing.expectEqual(try decode(u16, buf[0..]), 16384);
+        const decoded = (try decode(u16, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 16384);
+        try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
         const buf = ([2]u8{ 0b1010_1100, 0b0000_0010 });
-        try std.testing.expectEqual(try decode(u16, buf[0..]), 300);
+        const decoded = (try decode(u16, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 300);
+        try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
         const buf = ([10]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1 });
-        try std.testing.expectEqual(try decode(u64, buf[0..]), 0xFFFFFFFFFFFFFFFF);
+        const decoded = (try decode(u64, buf[0..]));
+        try std.testing.expectEqual(decoded.decoded, 0xFFFFFFFFFFFFFFFF);
+        try std.testing.expectEqual(decoded.rest.len, 0);
     }
     // errors.
     {
@@ -138,31 +218,31 @@ test "identity" {
     {
         for (0..std.math.maxInt(u8)) |n_| {
             const n: u8 = @intCast(n_);
-            try std.testing.expectEqual(n, try decode(u8, &encode(u8, n)));
+            try std.testing.expectEqual(n, (try decode(u8, &encodeForType(u8, n))).decoded);
         }
     }
     {
         for (0..std.math.maxInt(u16)) |n_| {
             const n: u16 = @intCast(n_);
-            try std.testing.expectEqual(n, try decode(u16, &encode(u16, n)));
+            try std.testing.expectEqual(n, (try decode(u16, &encodeForType(u16, n))).decoded);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u32 = @intCast(n_);
-            try std.testing.expectEqual(n, try decode(u32, &encode(u32, n)));
+            try std.testing.expectEqual(n, (try decode(u32, &encodeForType(u32, n))).decoded);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u64 = @intCast(n_);
-            try std.testing.expectEqual(n, try decode(u64, &encode(u64, n)));
+            try std.testing.expectEqual(n, (try decode(u64, &encodeForType(u64, n))).decoded);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u128 = @intCast(n_);
-            try std.testing.expectEqual(n, try decode(u128, &encode(u128, n)));
+            try std.testing.expectEqual(n, (try decode(u128, &encodeForType(u128, n))).decoded);
         }
     }
 }
