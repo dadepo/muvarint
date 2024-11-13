@@ -31,6 +31,18 @@ pub fn encode(comptime T: type, number: T) [encodedlen(T)]u8 {
     return out;
 }
 
+pub fn encodeHex(comptime T: type, rawHexString: []const u8) ![encodedlen(T)]u8 {
+    // Check if the string starts with "0x" and remove it if present
+    const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
+        rawHexString[2..]
+    else
+        rawHexString;
+
+    const number = try std.fmt.parseInt(T, parsedHexString, 16);
+
+    return encode(T, number);
+}
+
 pub const DecodeError = error{ NotMinimal, Overflow, Insufficient };
 pub fn decode(comptime T: type, buf: []const u8) DecodeError!T {
     var n: T = 0;
@@ -59,6 +71,23 @@ test "encode" {
     try std.testing.expectEqual(encode(u16, 300), [3]u8{ 172, 2, 0 });
     try std.testing.expectEqual(encode(u16, 16384), [3]u8{ 128, 128, 1 });
     try std.testing.expectEqual(encode(u64, std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+}
+
+test "encodeHex" {
+    try std.testing.expectEqual(try encodeHex(u8, "1"), [2]u8{ 1, 0 });
+    try std.testing.expectEqual(try encodeHex(u8, "0x0001"), [2]u8{ 1, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "7F"), [3]u8{ 127, 0, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "0x7F"), [3]u8{ 127, 0, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "80"), [3]u8{ 128, 1, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "0x0080"), [3]u8{ 128, 1, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "FF"), [3]u8{ 255, 1, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "0xFF"), [3]u8{ 255, 1, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "0x12C"), [3]u8{ 172, 2, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "0x012C"), [3]u8{ 172, 2, 0 });
+    try std.testing.expectEqual(try encodeHex(u16, "4000"), [3]u8{ 128, 128, 1 });
+    try std.testing.expectEqual(try encodeHex(u16, "0x4000"), [3]u8{ 128, 128, 1 });
+    try std.testing.expectEqual(try encodeHex(u64, "FFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+    try std.testing.expectEqual(try encodeHex(u64, "0xFFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
 test "decode" {
