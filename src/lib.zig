@@ -69,6 +69,31 @@ pub fn encode(number: anytype) [encodedLen(number)]u8 {
     return out;
 }
 
+pub fn encodeHexAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
+    const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
+        rawHexString[2..]
+    else
+        rawHexString;
+
+    const number = try std.fmt.parseInt(usize, parsedHexString, 16);
+
+    var list = std.ArrayList(u8).init(allocator);
+    defer list.deinit();
+
+    var n: usize = number;
+    while (true) {
+        const b: u8 = @as(u8, @truncate(n)) | 0x80;
+        try list.append(b);
+        n >>= 7;
+        if (n == 0) {
+            list.items[list.items.len - 1] &= 0x7f; // Clear the MSB of the last byte
+            break;
+        }
+    }
+
+    return try list.toOwnedSlice();
+}
+
 pub fn encodeHex(comptime T: type, rawHexString: []const u8) ![encodedTypelen(T)]u8 {
     // Check if the string starts with "0x" and remove it if present
     const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
@@ -82,10 +107,7 @@ pub fn encodeHex(comptime T: type, rawHexString: []const u8) ![encodedTypelen(T)
 }
 
 pub fn DecodeResult(comptime T: type) type {
-    return struct {
-        decoded: T,
-        rest: []const u8
-    };
+    return struct { decoded: T, rest: []const u8 };
 }
 
 pub const DecodeError = error{ NotMinimal, Overflow, Insufficient };
@@ -99,7 +121,7 @@ pub fn decode(comptime T: type, buf: []const u8) DecodeError!DecodeResult(T) {
             if (b == 0 and i > 0) {
                 return error.NotMinimal;
             }
-            return .{.decoded = n, .rest = buf[i+1..]};
+            return .{ .decoded = n, .rest = buf[i + 1 ..] };
         }
         if (i == (encodedTypelen(T) - 1)) {
             return error.Overflow;
@@ -120,14 +142,27 @@ test "encodeForType" {
 
 test "encode" {
     const value = 1;
-    try std.testing.expectEqual(encode(value), [1]u8{ 1 });
-    try std.testing.expectEqual(encode(127), [1]u8{ 127 });
+    try std.testing.expectEqual(encode(value), [1]u8{1});
+    try std.testing.expectEqual(encode(127), [1]u8{127});
     try std.testing.expectEqual(encode(128), [2]u8{ 128, 1 });
     try std.testing.expectEqual(encode(255), [2]u8{ 255, 1 });
     try std.testing.expectEqual(encode(300), [2]u8{ 172, 2 });
     try std.testing.expectEqual(encode(3840), [2]u8{ 128, 30 });
     try std.testing.expectEqual(encode(16384), [3]u8{ 128, 128, 1 });
     try std.testing.expectEqual(encode(std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+}
+
+test "encodeHexAlloc" {
+    {
+        const encoded = try encodeHexAlloc(std.testing.allocator, "0x0001");
+        defer std.testing.allocator.free(encoded);
+        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{1}));
+    }
+    {
+        const encoded = try encodeHexAlloc(std.testing.allocator, "0x00");
+        defer std.testing.allocator.free(encoded);
+        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{0}));
+    }
 }
 
 test "encodeHex" {
@@ -147,6 +182,13 @@ test "encodeHex" {
     try std.testing.expectEqual(try encodeHex(u64, "0xFFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
+test "encodeHex==encodeHexAlloc" {
+    const encode_without_alloc = try encodeHex(u64, "0xFFFFFFFFFFFFFFFF");
+    const encoded_with_alloc = try encodeHexAlloc(std.testing.allocator, "0xFFFFFFFFFFFFFFFF");
+    defer std.testing.allocator.free(encoded_with_alloc);
+    try std.testing.expect(std.mem.eql(u8, &encode_without_alloc, encoded_with_alloc));
+}
+
 test "decode" {
     {
         const buf = ([1]u8{1});
@@ -161,14 +203,14 @@ test "decode" {
         try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
-        const buf = ([2]u8{ 0b1000_0000, 1});
+        const buf = ([2]u8{ 0b1000_0000, 1 });
         const decoded = (try decode(u8, buf[0..]));
         try std.testing.expectEqual(decoded.decoded, 128);
         try std.testing.expectEqual(decoded.rest.len, 0);
     }
     {
         // encode with remaining data.
-        const buf = ([3]u8{ 0b1000_0000, 1, 0b1000_0000});
+        const buf = ([3]u8{ 0b1000_0000, 1, 0b1000_0000 });
         const decoded = (try decode(u8, buf[0..]));
         try std.testing.expectEqual(decoded.decoded, 128);
         try std.testing.expectEqual(decoded.rest[0], 0b1000_0000);
