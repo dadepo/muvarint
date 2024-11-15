@@ -41,23 +41,21 @@ fn encodedLen(comptime number: anytype) u8 {
 
 pub fn encodeForType(comptime T: type, number: T) [encodedTypelen(T)]u8 {
     var out: [encodedTypelen(T)]u8 = [_]u8{0} ** encodedTypelen(T);
-    var n = number;
-    for (&out) |*b| {
-        const b_: u8 = @truncate(n);
-        b.* = b_ | 0x80;
-        n >>= 7;
-        if (n == 0) {
-            b.* &= 0x7f;
-            break;
-        }
-    }
+    const n = number;
+    do_encode(&out, n);
     return out;
 }
 
 pub fn encode(number: anytype) [encodedLen(number)]u8 {
     var out: [encodedLen(number)]u8 = [_]u8{0} ** encodedLen(number);
-    var n: usize = number;
-    for (&out) |*b| {
+    const n: usize = number;
+    do_encode(&out, n);
+    return out;
+}
+
+fn do_encode(out: []u8, n_: anytype) void {
+    var n = n_;
+    for (out) |*b| {
         const b_: u8 = @truncate(n);
         b.* = b_ | 0x80;
         n >>= 7;
@@ -66,7 +64,6 @@ pub fn encode(number: anytype) [encodedLen(number)]u8 {
             break;
         }
     }
-    return out;
 }
 
 pub fn encodeHexAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
