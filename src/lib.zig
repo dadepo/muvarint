@@ -1,5 +1,16 @@
 const std = @import("std");
 
+fn varintSize(comptime value: anytype) u32 {
+    var count: u32 = 0;
+    var v = value;
+
+    while (v != 0) : (v >>= 7) {
+        count += 1;
+    }
+
+    return if (count == 0) 1 else count;
+}
+
 fn encodedTypelen(comptime T: type) u8 {
     switch (@typeInfo(T)) {
         .Int => {},
@@ -16,20 +27,8 @@ fn encodedTypelen(comptime T: type) u8 {
     };
 }
 
-fn varintSize(comptime value: anytype) u32 {
-    var count: u32 = 0;
-    var v = value;
-
-    while (v != 0) : (v >>= 7) {
-        count += 1;
-    }
-
-    return if (count == 0) 1 else count;
-}
-
 fn encodedLen(comptime number: anytype) u8 {
-    const value_type = @typeInfo(@TypeOf(number));
-    switch (value_type) {
+    switch (@typeInfo(@TypeOf(number))) {
         .Int, .ComptimeInt => {},
         else => @compileError("Expected unsigned integer type"),
     }
@@ -51,18 +50,18 @@ fn encodedHexLen(comptime rawHexString: []const u8) u8 {
 pub fn encodeForType(comptime T: type, number: T) [encodedTypelen(T)]u8 {
     var out: [encodedTypelen(T)]u8 = [_]u8{0} ** encodedTypelen(T);
     const n = number;
-    do_encode(&out, n);
+    doEncode(&out, n);
     return out;
 }
 
 pub fn encode(number: anytype) [encodedLen(number)]u8 {
     var out: [encodedLen(number)]u8 = [_]u8{0} ** encodedLen(number);
     const n: usize = number;
-    do_encode(&out, n);
+    doEncode(&out, n);
     return out;
 }
 
-fn do_encode(out: []u8, n_: anytype) void {
+fn doEncode(out: []u8, n_: anytype) void {
     var n = n_;
     for (out) |*b| {
         const b_: u8 = @truncate(n);
@@ -75,14 +74,7 @@ fn do_encode(out: []u8, n_: anytype) void {
     }
 }
 
-pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
-    const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
-        rawHexString[2..]
-    else
-        rawHexString;
-
-    const number = try std.fmt.parseInt(usize, parsedHexString, 16);
-
+fn doEncodeAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
     var list = std.ArrayList(u8).init(allocator);
     defer list.deinit();
 
@@ -98,6 +90,25 @@ pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8)
     }
 
     return try list.toOwnedSlice();
+}
+
+pub fn encodeHexAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
+    switch (@typeInfo(@TypeOf(number))) {
+        .Int, .ComptimeInt => {},
+        else => @compileError("Expected numeric value"),
+    }
+    return try doEncodeAlloc(allocator, number);
+}
+
+pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
+    const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
+        rawHexString[2..]
+    else
+        rawHexString;
+
+    const number = try std.fmt.parseInt(usize, parsedHexString, 16);
+
+    return try doEncodeAlloc(allocator, number);
 }
 
 pub fn encodeHexStr(comptime rawHexString: []const u8) ![encodedHexLen(rawHexString)]u8 {
@@ -161,6 +172,19 @@ test "encode" {
 
 test "encodeHexAlloc" {
     {
+        const encoded = try encodeHexAlloc(std.testing.allocator, 0x0001);
+        defer std.testing.allocator.free(encoded);
+        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{1}));
+    }
+    {
+        const encoded = try encodeHexAlloc(std.testing.allocator, 0x00);
+        defer std.testing.allocator.free(encoded);
+        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{0}));
+    }
+}
+
+test "encodeHexStrAlloc" {
+    {
         const encoded = try encodeHexStrAlloc(std.testing.allocator, "0x0001");
         defer std.testing.allocator.free(encoded);
         try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{1}));
@@ -172,7 +196,7 @@ test "encodeHexAlloc" {
     }
 }
 
-test "encodeHex" {
+test "encodeHexStr" {
     try std.testing.expectEqual(try encodeHexStr("1"), [1]u8{1});
     try std.testing.expectEqual(try encodeHexStr("0x0001"), [1]u8{1});
     try std.testing.expectEqual(try encodeHexStr("7F"), [1]u8{127});
@@ -189,7 +213,7 @@ test "encodeHex" {
     try std.testing.expectEqual(try encodeHexStr("0xFFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
-test "encodeHex==encodeHexAlloc" {
+test "encodeHexStr==encodeHexStrAlloc" {
     const encode_without_alloc = try encodeHexStr("0xFFFFFFFFFFFFFFFF");
     const encoded_with_alloc = try encodeHexStrAlloc(std.testing.allocator, "0xFFFFFFFFFFFFFFFF");
     defer std.testing.allocator.free(encoded_with_alloc);
