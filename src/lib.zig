@@ -75,7 +75,7 @@ fn do_encode(out: []u8, n_: anytype) void {
     }
 }
 
-pub fn encodeHexAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
+pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
     const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
         rawHexString[2..]
     else
@@ -100,7 +100,7 @@ pub fn encodeHexAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![
     return try list.toOwnedSlice();
 }
 
-pub fn encodeHex(comptime rawHexString: []const u8) ![encodedHexLen(rawHexString)]u8 {
+pub fn encodeHexStr(comptime rawHexString: []const u8) ![encodedHexLen(rawHexString)]u8 {
     const out = comptime blk: {
         const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
             rawHexString[2..]
@@ -161,37 +161,37 @@ test "encode" {
 
 test "encodeHexAlloc" {
     {
-        const encoded = try encodeHexAlloc(std.testing.allocator, "0x0001");
+        const encoded = try encodeHexStrAlloc(std.testing.allocator, "0x0001");
         defer std.testing.allocator.free(encoded);
         try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{1}));
     }
     {
-        const encoded = try encodeHexAlloc(std.testing.allocator, "0x00");
+        const encoded = try encodeHexStrAlloc(std.testing.allocator, "0x00");
         defer std.testing.allocator.free(encoded);
         try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{0}));
     }
 }
 
 test "encodeHex" {
-    try std.testing.expectEqual(try encodeHex("1"), [1]u8{1});
-    try std.testing.expectEqual(try encodeHex("0x0001"), [1]u8{1});
-    try std.testing.expectEqual(try encodeHex("7F"), [1]u8{127});
-    try std.testing.expectEqual(try encodeHex("0x7F"), [1]u8{127});
-    try std.testing.expectEqual(try encodeHex("80"), [2]u8{ 128, 1 });
-    try std.testing.expectEqual(try encodeHex("0x0080"), [2]u8{ 128, 1 });
-    try std.testing.expectEqual(try encodeHex("FF"), [2]u8{ 255, 1 });
-    try std.testing.expectEqual(try encodeHex("0xFF"), [2]u8{ 255, 1 });
-    try std.testing.expectEqual(try encodeHex("0x12C"), [2]u8{ 172, 2 });
-    try std.testing.expectEqual(try encodeHex("0x012C"), [2]u8{ 172, 2 });
-    try std.testing.expectEqual(try encodeHex("4000"), [3]u8{ 128, 128, 1 });
-    try std.testing.expectEqual(try encodeHex("0x4000"), [3]u8{ 128, 128, 1 });
-    try std.testing.expectEqual(try encodeHex("FFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
-    try std.testing.expectEqual(try encodeHex("0xFFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+    try std.testing.expectEqual(try encodeHexStr("1"), [1]u8{1});
+    try std.testing.expectEqual(try encodeHexStr("0x0001"), [1]u8{1});
+    try std.testing.expectEqual(try encodeHexStr("7F"), [1]u8{127});
+    try std.testing.expectEqual(try encodeHexStr("0x7F"), [1]u8{127});
+    try std.testing.expectEqual(try encodeHexStr("80"), [2]u8{ 128, 1 });
+    try std.testing.expectEqual(try encodeHexStr("0x0080"), [2]u8{ 128, 1 });
+    try std.testing.expectEqual(try encodeHexStr("FF"), [2]u8{ 255, 1 });
+    try std.testing.expectEqual(try encodeHexStr("0xFF"), [2]u8{ 255, 1 });
+    try std.testing.expectEqual(try encodeHexStr("0x12C"), [2]u8{ 172, 2 });
+    try std.testing.expectEqual(try encodeHexStr("0x012C"), [2]u8{ 172, 2 });
+    try std.testing.expectEqual(try encodeHexStr("4000"), [3]u8{ 128, 128, 1 });
+    try std.testing.expectEqual(try encodeHexStr("0x4000"), [3]u8{ 128, 128, 1 });
+    try std.testing.expectEqual(try encodeHexStr("FFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
+    try std.testing.expectEqual(try encodeHexStr("0xFFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
 test "encodeHex==encodeHexAlloc" {
-    const encode_without_alloc = try encodeHex("0xFFFFFFFFFFFFFFFF");
-    const encoded_with_alloc = try encodeHexAlloc(std.testing.allocator, "0xFFFFFFFFFFFFFFFF");
+    const encode_without_alloc = try encodeHexStr("0xFFFFFFFFFFFFFFFF");
+    const encoded_with_alloc = try encodeHexStrAlloc(std.testing.allocator, "0xFFFFFFFFFFFFFFFF");
     defer std.testing.allocator.free(encoded_with_alloc);
     try std.testing.expect(std.mem.eql(u8, &encode_without_alloc, encoded_with_alloc));
 }
