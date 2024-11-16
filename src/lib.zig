@@ -67,24 +67,6 @@ pub fn bufferEncode(number: anytype, out: []u8) !void {
     doEncode(number, out);
 }
 
-pub fn encodeAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
-    var list = std.ArrayList(u8).init(allocator);
-    defer list.deinit();
-
-    var n: u128 = number;
-    while (true) {
-        const b: u8 = @as(u8, @truncate(n)) | 0x80;
-        try list.append(b);
-        n >>= 7;
-        if (n == 0) {
-            list.items[list.items.len - 1] &= 0x7f; // Clear the MSB of the last byte
-            break;
-        }
-    }
-
-    return try list.toOwnedSlice();
-}
-
 pub fn bufferEncodeHex(number: anytype, out: []u8) !void {
     switch (@typeInfo(@TypeOf(number))) {
         .Int, .ComptimeInt => {},
@@ -102,17 +84,6 @@ pub fn bufferEncodeHexStr(rawHexString: []const u8, out: []u8) !void {
     const number = try std.fmt.parseInt(usize, parsedHexString, 16);
 
     return try bufferEncode(number, out);
-}
-
-pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
-    const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
-        rawHexString[2..]
-    else
-        rawHexString;
-
-    const number = try std.fmt.parseInt(usize, parsedHexString, 16);
-
-    return try encodeAlloc(allocator, number);
 }
 
 pub fn encodeHexStr(comptime rawHexString: []const u8) ![encodedHexLen(rawHexString)]u8 {
@@ -177,7 +148,7 @@ test "bufferEncodeHex" {
     }
 }
 
-test "encodeHexStrAlloc" {
+test "bufferEncodeHexStr" {
     {
         const to_encode = "0x0001";
         const size: usize = 0x0001;
