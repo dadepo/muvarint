@@ -11,22 +11,6 @@ fn varintSize(comptime value: anytype) u32 {
     return if (count == 0) 1 else count;
 }
 
-fn encodedTypelen(comptime T: type) u8 {
-    switch (@typeInfo(T)) {
-        .Int => {},
-        else => @compileError("Expected unsigned integer type"),
-    }
-
-    return switch (@typeInfo(T).Int.bits) {
-        8 => 2,
-        16 => 3,
-        32 => 5,
-        64 => 10,
-        128 => 19,
-        else => @compileError("Expected any of u8, u16, u32, u64, or u128"),
-    };
-}
-
 fn encodedLen(comptime number: anytype) u8 {
     switch (@typeInfo(@TypeOf(number))) {
         .Int, .ComptimeInt => {},
@@ -45,13 +29,6 @@ fn encodedHexLen(comptime rawHexString: []const u8) u8 {
     const number = try std.fmt.parseInt(usize, parsedHexString, 16);
 
     return varintSize(number);
-}
-
-pub fn encodeForType(comptime T: type, number: T) [encodedTypelen(T)]u8 {
-    var out: [encodedTypelen(T)]u8 = [_]u8{0} ** encodedTypelen(T);
-    const n = number;
-    doEncode(&out, n);
-    return out;
 }
 
 pub fn encode(number: anytype) [encodedLen(number)]u8 {
@@ -74,11 +51,11 @@ fn doEncode(out: []u8, n_: anytype) void {
     }
 }
 
-fn doEncodeAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
+pub fn encodeAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
     var list = std.ArrayList(u8).init(allocator);
     defer list.deinit();
 
-    var n: usize = number;
+    var n: u128 = number;
     while (true) {
         const b: u8 = @as(u8, @truncate(n)) | 0x80;
         try list.append(b);
@@ -97,7 +74,7 @@ pub fn encodeHexAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
         .Int, .ComptimeInt => {},
         else => @compileError("Expected numeric value"),
     }
-    return try doEncodeAlloc(allocator, number);
+    return try encodeAlloc(allocator, number);
 }
 
 pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
@@ -108,7 +85,7 @@ pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8)
 
     const number = try std.fmt.parseInt(usize, parsedHexString, 16);
 
-    return try doEncodeAlloc(allocator, number);
+    return try encodeAlloc(allocator, number);
 }
 
 pub fn encodeHexStr(comptime rawHexString: []const u8) ![encodedHexLen(rawHexString)]u8 {
@@ -144,16 +121,6 @@ pub fn decode(buf: []const u8) DecodeError!DecodeResult {
         }
     }
     return error.Insufficient;
-}
-
-test "encodeForType" {
-    try std.testing.expectEqual(encodeForType(u8, 1), [2]u8{ 1, 0 });
-    try std.testing.expectEqual(encodeForType(u16, 127), [3]u8{ 127, 0, 0 });
-    try std.testing.expectEqual(encodeForType(u16, 128), [3]u8{ 128, 1, 0 });
-    try std.testing.expectEqual(encodeForType(u16, 255), [3]u8{ 255, 1, 0 });
-    try std.testing.expectEqual(encodeForType(u16, 300), [3]u8{ 172, 2, 0 });
-    try std.testing.expectEqual(encodeForType(u16, 16384), [3]u8{ 128, 128, 1 });
-    try std.testing.expectEqual(encodeForType(u64, std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
 test "encode" {
@@ -281,35 +248,45 @@ test "decode" {
     }
 }
 
-test "identity" {
+test "identity-encodeAlloc" {
     {
         for (0..std.math.maxInt(u8)) |n_| {
             const n: u8 = @intCast(n_);
-            try std.testing.expectEqual(n, (try decode(&encodeForType(u8, n))).code);
+            const encoded = try encodeAlloc(std.testing.allocator, n);
+            defer std.testing.allocator.free(encoded);
+            try std.testing.expectEqual(n, (try decode(encoded)).code);
         }
     }
     {
         for (0..std.math.maxInt(u16)) |n_| {
             const n: u16 = @intCast(n_);
-            try std.testing.expectEqual(n, (try decode(&encodeForType(u16, n))).code);
+            const encoded = try encodeAlloc(std.testing.allocator, n);
+            defer std.testing.allocator.free(encoded);
+            try std.testing.expectEqual(n, (try decode(encoded)).code);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u32 = @intCast(n_);
-            try std.testing.expectEqual(n, (try decode(&encodeForType(u32, n))).code);
+            const encoded = try encodeAlloc(std.testing.allocator, n);
+            defer std.testing.allocator.free(encoded);
+            try std.testing.expectEqual(n, (try decode(encoded)).code);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u64 = @intCast(n_);
-            try std.testing.expectEqual(n, (try decode(&encodeForType(u64, n))).code);
+            const encoded = try encodeAlloc(std.testing.allocator, n);
+            defer std.testing.allocator.free(encoded);
+            try std.testing.expectEqual(n, (try decode(encoded)).code);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u128 = @intCast(n_);
-            try std.testing.expectEqual(n, (try decode(&encodeForType(u128, n))).code);
+            const encoded = try encodeAlloc(std.testing.allocator, n);
+            defer std.testing.allocator.free(encoded);
+            try std.testing.expectEqual(n, (try decode(encoded)).code);
         }
     }
 }
