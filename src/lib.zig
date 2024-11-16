@@ -16,7 +16,6 @@ fn encodedLen(comptime number: anytype) u8 {
         .Int, .ComptimeInt => {},
         else => @compileError("Expected unsigned integer type"),
     }
-
     return varintSize(number);
 }
 
@@ -41,10 +40,16 @@ pub fn encode(number: anytype) [encodedLen(number)]u8 {
 fn doEncode(out: []u8, n_: anytype) void {
     var n = n_;
     for (out) |*b| {
-        const b_: u8 = @truncate(n);
-        b.* = b_ | 0x80;
+        // get the lsb.
+        const lsb: u8 = @truncate(n);
+        // Set the most significant bit of the lsb to 1 and save that as the output byte in this iteration.
+        // output byte = lsb | 10000000
+        b.* = lsb | 0x80;
+        // Now shift the number being encoded to the right by 7 bits to remove the lsb that was processed.
         n >>= 7;
         if (n == 0) {
+            // if after the shift, n = 0, we are at the end,
+            // then set the most significant bit of the lsb back to 0 and exit the loop.
             b.* &= 0x7f;
             break;
         }
