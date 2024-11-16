@@ -85,12 +85,12 @@ pub fn encodeAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
     return try list.toOwnedSlice();
 }
 
-pub fn encodeHexAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
+pub fn bufferEncodeHex(number: anytype, out: []u8) !void {
     switch (@typeInfo(@TypeOf(number))) {
         .Int, .ComptimeInt => {},
         else => @compileError("Expected numeric value"),
     }
-    return try encodeAlloc(allocator, number);
+    return try bufferEncode(number, out);
 }
 
 pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
@@ -151,16 +151,18 @@ test "encode" {
     try std.testing.expectEqual(encode(std.math.maxInt(u64)), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
-test "encodeHexAlloc" {
+test "bufferEncodeHex" {
     {
-        const encoded = try encodeHexAlloc(std.testing.allocator, 0x0001);
-        defer std.testing.allocator.free(encoded);
-        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{1}));
+        const to_encode: usize = 0x0001;
+        var encoded = try std.BoundedArray(u8, 64).init(varintSize(to_encode));
+        try bufferEncodeHex(to_encode, encoded.slice());
+        try std.testing.expect(std.mem.eql(u8, encoded.slice(), &[1]u8{1}));
     }
     {
-        const encoded = try encodeHexAlloc(std.testing.allocator, 0x00);
-        defer std.testing.allocator.free(encoded);
-        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{0}));
+        const to_encode: usize = 0x00;
+        var encoded = try std.BoundedArray(u8, 64).init(varintSize(to_encode));
+        try bufferEncodeHex(to_encode, encoded.slice());
+        try std.testing.expect(std.mem.eql(u8, encoded.slice(), &[1]u8{0}));
     }
 }
 
