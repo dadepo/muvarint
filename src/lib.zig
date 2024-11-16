@@ -93,6 +93,17 @@ pub fn bufferEncodeHex(number: anytype, out: []u8) !void {
     return try bufferEncode(number, out);
 }
 
+pub fn bufferEncodeHexStr(rawHexString: []const u8, out: []u8) !void {
+    const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
+        rawHexString[2..]
+    else
+        rawHexString;
+
+    const number = try std.fmt.parseInt(usize, parsedHexString, 16);
+
+    return try bufferEncode(number, out);
+}
+
 pub fn encodeHexStrAlloc(allocator: std.mem.Allocator, rawHexString: []const u8) ![]u8 {
     const parsedHexString = if (std.mem.startsWith(u8, rawHexString, "0x"))
         rawHexString[2..]
@@ -168,14 +179,18 @@ test "bufferEncodeHex" {
 
 test "encodeHexStrAlloc" {
     {
-        const encoded = try encodeHexStrAlloc(std.testing.allocator, "0x0001");
-        defer std.testing.allocator.free(encoded);
-        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{1}));
+        const to_encode = "0x0001";
+        const size: usize = 0x0001;
+        var encoded = try std.BoundedArray(u8, 64).init(varintSize(size));
+        try bufferEncodeHexStr(to_encode, encoded.slice());
+        try std.testing.expect(std.mem.eql(u8, encoded.slice(), &[1]u8{1}));
     }
     {
-        const encoded = try encodeHexStrAlloc(std.testing.allocator, "0x00");
-        defer std.testing.allocator.free(encoded);
-        try std.testing.expect(std.mem.eql(u8, encoded, &[1]u8{0}));
+        const to_encode = "0x00";
+        const size: usize = 0x00;
+        var encoded = try std.BoundedArray(u8, 64).init(varintSize(size));
+        try bufferEncodeHexStr(to_encode, encoded.slice());
+        try std.testing.expect(std.mem.eql(u8, encoded.slice(), &[1]u8{0}));
     }
 }
 
@@ -196,11 +211,13 @@ test "encodeHexStr" {
     try std.testing.expectEqual(try encodeHexStr("0xFFFFFFFFFFFFFFFF"), [10]u8{ 255, 255, 255, 255, 255, 255, 255, 255, 255, 1 });
 }
 
-test "encodeHexStr==encodeHexStrAlloc" {
-    const encode_without_alloc = try encodeHexStr("0xFFFFFFFFFFFFFFFF");
-    const encoded_with_alloc = try encodeHexStrAlloc(std.testing.allocator, "0xFFFFFFFFFFFFFFFF");
-    defer std.testing.allocator.free(encoded_with_alloc);
-    try std.testing.expect(std.mem.eql(u8, &encode_without_alloc, encoded_with_alloc));
+test "encodeHexStr==bufferEncodeHexStr" {
+    const encode_without_buffer = try encodeHexStr("0xFFFFFFFFFFFFFFFF");
+    const to_encode = "0xFFFFFFFFFFFFFFFF";
+    const size: usize = 0xFFFFFFFFFFFFFFFF;
+    var encoded_with_buffer = try std.BoundedArray(u8, 128).init(varintSize(size));
+    try bufferEncodeHexStr(to_encode, encoded_with_buffer.slice());
+    try std.testing.expect(std.mem.eql(u8, &encode_without_buffer, encoded_with_buffer.slice()));
 }
 
 test "decode" {
