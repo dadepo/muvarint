@@ -1,6 +1,6 @@
 const std = @import("std");
 
-fn varintSize(comptime value: anytype) u32 {
+fn varintSize(value: anytype) u32 {
     var count: u32 = 0;
     var v = value;
 
@@ -33,11 +33,11 @@ fn encodedHexLen(comptime rawHexString: []const u8) u8 {
 pub fn encode(number: anytype) [encodedLen(number)]u8 {
     var out: [encodedLen(number)]u8 = [_]u8{0} ** encodedLen(number);
     const n: usize = number;
-    doEncode(&out, n);
+    doEncode(n, &out);
     return out;
 }
 
-fn doEncode(out: []u8, n_: anytype) void {
+fn doEncode(n_: anytype, out: []u8) void {
     var n = n_;
     for (out) |*b| {
         // get the lsb.
@@ -54,6 +54,17 @@ fn doEncode(out: []u8, n_: anytype) void {
             break;
         }
     }
+}
+
+pub fn bufferEncode(number: anytype, out: []u8) !void {
+    const len = varintSize(number);
+    if (out.len < len) {
+        return error.InsufficientOutputBuffer;
+    }
+    if (out.len > len) {
+        return error.ExcessOutputBuffer;
+    }
+    doEncode(number, out);
 }
 
 pub fn encodeAlloc(allocator: std.mem.Allocator, number: anytype) ![]u8 {
@@ -253,45 +264,45 @@ test "decode" {
     }
 }
 
-test "identity-encodeAlloc" {
+test "identity-bufferEncode" {
     {
         for (0..std.math.maxInt(u8)) |n_| {
             const n: u8 = @intCast(n_);
-            const encoded = try encodeAlloc(std.testing.allocator, n);
-            defer std.testing.allocator.free(encoded);
-            try std.testing.expectEqual(n, (try decode(encoded)).code);
+            var out = try std.BoundedArray(u8, 64).init(varintSize(n));
+            try bufferEncode(n, out.slice());
+            try std.testing.expectEqual(n, (try decode(out.slice())).code);
         }
     }
     {
         for (0..std.math.maxInt(u16)) |n_| {
             const n: u16 = @intCast(n_);
-            const encoded = try encodeAlloc(std.testing.allocator, n);
-            defer std.testing.allocator.free(encoded);
-            try std.testing.expectEqual(n, (try decode(encoded)).code);
+            var out = try std.BoundedArray(u8, 64).init(varintSize(n));
+            try bufferEncode(n, out.slice());
+            try std.testing.expectEqual(n, (try decode(out.slice())).code);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u32 = @intCast(n_);
-            const encoded = try encodeAlloc(std.testing.allocator, n);
-            defer std.testing.allocator.free(encoded);
-            try std.testing.expectEqual(n, (try decode(encoded)).code);
+            var out = try std.BoundedArray(u8, 64).init(varintSize(n));
+            try bufferEncode(n, out.slice());
+            try std.testing.expectEqual(n, (try decode(out.slice())).code);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u64 = @intCast(n_);
-            const encoded = try encodeAlloc(std.testing.allocator, n);
-            defer std.testing.allocator.free(encoded);
-            try std.testing.expectEqual(n, (try decode(encoded)).code);
+            var out = try std.BoundedArray(u8, 64).init(varintSize(n));
+            try bufferEncode(n, out.slice());
+            try std.testing.expectEqual(n, (try decode(out.slice())).code);
         }
     }
     {
         for (0..1000_000) |n_| {
             const n: u128 = @intCast(n_);
-            const encoded = try encodeAlloc(std.testing.allocator, n);
-            defer std.testing.allocator.free(encoded);
-            try std.testing.expectEqual(n, (try decode(encoded)).code);
+            var out = try std.BoundedArray(u8, 64).init(varintSize(n));
+            try bufferEncode(n, out.slice());
+            try std.testing.expectEqual(n, (try decode(out.slice())).code);
         }
     }
 }
