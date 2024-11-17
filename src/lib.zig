@@ -1,16 +1,5 @@
 const std = @import("std");
 
-fn varintSize(value: anytype) u32 {
-    var count: u32 = 0;
-    var v = value;
-
-    while (v != 0) : (v >>= 7) {
-        count += 1;
-    }
-
-    return if (count == 0) 1 else count;
-}
-
 fn encodedLen(comptime number: anytype) u8 {
     switch (@typeInfo(@TypeOf(number))) {
         .Int, .ComptimeInt => {},
@@ -28,6 +17,17 @@ fn encodedHexLen(comptime rawHexString: []const u8) u8 {
     const number = try std.fmt.parseInt(usize, parsedHexString, 16);
 
     return varintSize(number);
+}
+
+pub fn varintSize(value: anytype) u32 {
+    var count: u32 = 0;
+    var v = value;
+
+    while (v != 0) : (v >>= 7) {
+        count += 1;
+    }
+
+    return if (count == 0) 1 else count;
 }
 
 pub fn encode(number: anytype) [encodedLen(number)]u8 {
